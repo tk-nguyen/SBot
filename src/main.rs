@@ -15,10 +15,11 @@ use serenity::framework::standard::{
 };
 use serenity::model::{
     channel::Message,
+    event::ResumedEvent,
     gateway::Ready,
     prelude::{Activity, UserId},
 };
-use serenity::utils::Colour;
+use serenity::utils::{Colour, MessageBuilder};
 
 pub mod search;
 use search::search;
@@ -36,6 +37,9 @@ impl EventHandler for Handler {
         ctx.set_activity(Activity::playing("searching the web! | !help"))
             .await;
     }
+    async fn resume(&self, _ctx: Context, _resume: ResumedEvent) {
+        info!("Bot successfully reconnected!");
+    }
 }
 
 // Logging requested command
@@ -49,6 +53,7 @@ async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
 
     true
 }
+
 #[help]
 #[command_not_found_text = "Could not find: `{}`"]
 #[strikethrough_commands_tip_in_dm = ""]
@@ -64,6 +69,9 @@ async fn sbot_help(
     let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
 }
+
+const DUCKDUCKGO_ICON: &'static str =
+    "https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -85,7 +93,7 @@ async fn main() -> Result<()> {
         .await?;
 
     // Start the bot
-    client.start().await?;
+    client.start_autosharded().await?;
     Ok(())
 }
 
@@ -119,20 +127,25 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                         e.image(format!("https://duckduckgo.com/{}", search_result.image));
                     }
                 } else {
-                    e.title("Search result:");
-                    let search_result = search_result.related_topics;
-                    for topic in search_result {
-                        match topic {
-                            RelatedTopic::TopicResult(topic_res) => {
-                                e.field("URL", topic_res.first_url, false);
-                                e.field("Info", topic_res.text, false);
+                    if search_result.related_topics.len() != 0 {
+                        e.title("Search result:");
+                        let search_result = search_result.related_topics;
+                        for (idx, topic) in search_result.iter().enumerate() {
+                            if let RelatedTopic::TopicResult(topic_res) = topic {
+                                let mut res = MessageBuilder::new();
+                                res.push(format!("{}\n", topic_res.first_url));
+                                res.push(format!("{}\n", topic_res.text));
+                                e.field(idx + 1, res.build(), true);
                             }
-                            RelatedTopic::Topic(_t) => continue,
                         }
+                    } else {
+                        let mut res = MessageBuilder::new();
+                        res.push_bold("No result found!");
+                        e.description(res.build());
                     }
                 }
                 e.footer(|f| {
-                    f.icon_url("https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png");
+                    f.icon_url(DUCKDUCKGO_ICON);
                     f.text("Result from DuckDuckGo");
                     f
                 });
