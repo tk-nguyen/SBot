@@ -1,6 +1,10 @@
-use std::collections::HashSet;
-use std::env;
+use std::{
+    collections::HashSet,
+    env,
+    sync::{Arc, Mutex},
+};
 
+use chrono::prelude::{DateTime, Utc};
 use color_eyre::eyre::Result;
 use ddg::RelatedTopic;
 use dotenv::dotenv;
@@ -19,11 +23,13 @@ use serenity::model::{
     gateway::Ready,
     prelude::{Activity, UserId},
 };
+use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
 
 pub mod search;
 use search::search;
 
+/// We declare our commands here
 #[group]
 #[commands(ping, s)]
 struct General;
@@ -42,7 +48,7 @@ impl EventHandler for Handler {
     }
 }
 
-// Logging requested command
+/// Logging requested command
 #[hook]
 #[instrument]
 async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
@@ -54,6 +60,7 @@ async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
     true
 }
 
+/// A help command for the bot
 #[help]
 #[command_not_found_text = "Could not find: `{}`"]
 #[strikethrough_commands_tip_in_dm = ""]
@@ -70,6 +77,7 @@ async fn sbot_help(
     Ok(())
 }
 
+/// This icon is used in the embed for attribution
 const DUCKDUCKGO_ICON: &'static str =
     "https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png";
 
@@ -97,10 +105,18 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Ping command
+/// Ping command, also return latency
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(ctx, "Pong!").await?;
+    // We should return latency when requested
+    // Right now it just calculate the time between current time and creation time
+    // so it's not accurate
+    // TODO switch to calculate from shard
+    let send_time = msg.timestamp;
+    let latency = Utc::now() - send_time;
+    msg.channel_id
+        .say(ctx, format!("Pong! ({}ms)", latency.num_milliseconds()))
+        .await?;
     Ok(())
 }
 
