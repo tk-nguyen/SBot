@@ -1,17 +1,16 @@
-use std::{
-    collections::HashSet,
-    env,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, env, sync::Arc};
 
-use chrono::prelude::{DateTime, Utc};
 use color_eyre::eyre::Result;
 use ddg::RelatedTopic;
 use dotenv::dotenv;
-use tracing::info;
+use tokio::sync::Mutex;
+use tracing::{error, info};
 
 use serenity::async_trait;
-use serenity::client::{Client, Context, EventHandler};
+use serenity::client::{
+    bridge::gateway::{ShardId, ShardManager},
+    Client, Context, EventHandler,
+};
 use serenity::framework::standard::{
     help_commands,
     macros::{command, group, help, hook},
@@ -29,7 +28,14 @@ use serenity::utils::{Colour, MessageBuilder};
 pub mod search;
 use search::search;
 
-/// We declare our commands here
+// Shard management for latency measuring
+struct ShardManagerContainer;
+
+impl TypeMapKey for ShardManagerContainer {
+    type Value = Arc<Mutex<ShardManager>>;
+}
+
+// We declare our commands here
 #[group]
 #[commands(ping, s)]
 struct General;
@@ -48,7 +54,7 @@ impl EventHandler for Handler {
     }
 }
 
-/// Logging requested command
+// Logging requested command
 #[hook]
 #[instrument]
 async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
@@ -60,8 +66,12 @@ async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
     true
 }
 
-/// A help command for the bot
+// A help command for the bot
 #[help]
+#[individual_command_tip = "A simple search bot for Discord, using DuckDuckGo\n\n\
+To get help with an individual command, pass its name as an argument to this command."]
+#[embed_success_colour(GOLD)]
+#[embed_error_colour(RED)]
 #[command_not_found_text = "Could not find: `{}`"]
 #[strikethrough_commands_tip_in_dm = ""]
 #[strikethrough_commands_tip_in_guild = ""]
@@ -77,7 +87,7 @@ async fn sbot_help(
     Ok(())
 }
 
-/// This icon is used in the embed for attribution
+// This icon is used in the embed for attribution
 const DUCKDUCKGO_ICON: &'static str =
     "https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png";
 
@@ -85,8 +95,8 @@ const DUCKDUCKGO_ICON: &'static str =
 async fn main() -> Result<()> {
     dotenv()?;
     tracing_subscriber::fmt::init();
-    // Setting up basic structures
     color_eyre::install()?;
+    // Setting up basic structures
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
@@ -99,7 +109,10 @@ async fn main() -> Result<()> {
         .event_handler(Handler)
         .framework(framework)
         .await?;
-
+    {
+        let mut data = client.data.write().await;
+        data.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
+    }
     // Start the bot
     client.start_autosharded().await?;
     Ok(())
@@ -108,20 +121,46 @@ async fn main() -> Result<()> {
 /// Ping command, also return latency
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    // We should return latency when requested
-    // Right now it just calculate the time between current time and creation time
-    // so it's not accurate
-    // TODO switch to calculate from shard
-    let send_time = msg.timestamp;
-    let latency = Utc::now() - send_time;
-    msg.channel_id
-        .say(ctx, format!("Pong! ({}ms)", latency.num_milliseconds()))
-        .await?;
+    // We return the latency when using this command
+    let data = ctx.data.read().await;
+
+    let shard_manager = match data.get::<ShardManagerContainer>() {
+        Some(v) => v,
+        None => {
+            msg.reply(ctx, "There was a problem getting the shard manager")
+                .await?;
+
+            return Ok(());
+        }
+    };
+
+    let manager = shard_manager.lock().await;
+    let runners = manager.runners.lock().await;
+
+    // Shards are backed by a "shard runner" responsible for processing events
+    // over the shard, so we'll get the information about the shard runner for
+    // the shard this command was sent over.
+    let runner = match runners.get(&ShardId(ctx.shard_id)) {
+        Some(runner) => runner,
+        None => {
+            msg.reply(ctx, "No shard found").await?;
+
+            return Ok(());
+        }
+    };
+    let mut message = MessageBuilder::new();
+    message.push_bold("Pong! ");
+    if let Some(latency) = runner.latency {
+        message.push(format!("({}ms)", latency.as_millis()));
+    }
+    msg.channel_id.say(ctx, message.build()).await?;
     Ok(())
 }
 
-/// Query DDG for search
+/// Query DuckDuckGo for search results
 #[command]
+#[usage = "<query>"]
+#[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
     info!(
         "'{}#{}' requested a search for '{}'",
@@ -149,8 +188,8 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                         for (idx, topic) in search_result.iter().enumerate() {
                             if let RelatedTopic::TopicResult(topic_res) = topic {
                                 let mut res = MessageBuilder::new();
-                                res.push(format!("{}\n", topic_res.first_url));
-                                res.push(format!("{}\n", topic_res.text));
+                                res.push(format!("{}\n", topic_res.first_url))
+                                    .push(format!("{}\n", topic_res.text));
                                 e.field(idx + 1, res.build(), true);
                             }
                         }
