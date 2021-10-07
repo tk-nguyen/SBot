@@ -43,7 +43,9 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
-          path: target/${{ matrix.target }}/release/sbot
+          path: |
+            target/${{ matrix.target }}/release/sbot*
+            !target/${{ matrix.target }}/release/sbot.d
           name: sbot-${{ matrix.target }}
 
   publish:
