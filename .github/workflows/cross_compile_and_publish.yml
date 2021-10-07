@@ -43,10 +43,10 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
+          name: sbot-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/sbot*
             !target/${{ matrix.target }}/release/sbot.d
-          name: sbot-${{ matrix.target }}
 
   publish:
     name: Publish
@@ -62,21 +62,16 @@ jobs:
 
     steps:
       - name: Download artifacts
-        id: download
         uses: actions/download-artifact@v2
         with:
           name: sbot-${{ matrix.target }}
-          path: ${{ matrix.target }}
 
       - name: Tar up binaries
-        run: |
-          cd {{ matrix.target }}
-          tar czvf ../sbot-${{ matrix.target }}.tar.gz sbot-${{ matrix.target }}
-          cd -
+        run: tar czvf sbot-${{ matrix.target }}.tar.gz sbot*
 
       - name: Publish binaries to release
         uses: softprops/action-gh-release@v1
         with:
-          files: "sbot*"
+          files: "sbot*.tar.gz"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

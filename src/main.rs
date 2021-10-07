@@ -150,6 +150,8 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
             return Ok(());
         }
     };
+
+    // We only return the latency when it exists
     let mut message = MessageBuilder::new();
     message.push_bold("Pong! ");
     if let Some(latency) = runner.latency {
@@ -174,6 +176,7 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                     let mut title = MessageBuilder::new();
                     title.push_bold(search_result.heading);
                     e.title(title.build());
+
                     e.description(search_result.abstract_text);
                     e.url(search_result.abstract_url);
                     if search_result.image != "" {
@@ -184,6 +187,7 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                         let mut title = MessageBuilder::new();
                         title.push_bold("Search results:");
                         e.title(title.build());
+
                         let search_result = search_result.related_topics;
                         for (idx, topic) in search_result.iter().enumerate() {
                             if let RelatedTopic::TopicResult(topic_res) = topic {
