@@ -127,6 +127,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     let shard_manager = match data.get::<ShardManagerContainer>() {
         Some(v) => v,
         None => {
+            error!("There was a problem getting the shard manager");
             msg.reply(ctx, "There was a problem getting the shard manager")
                 .await?;
 
@@ -143,6 +144,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     let runner = match runners.get(&ShardId(ctx.shard_id)) {
         Some(runner) => runner,
         None => {
+            error!("No shard found");
             msg.reply(ctx, "No shard found").await?;
 
             return Ok(());
@@ -162,12 +164,6 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage = "<query>"]
 #[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
-    info!(
-        "'{}#{}' requested a search for '{}'",
-        msg.author.name,
-        msg.author.discriminator,
-        arg.rest()
-    );
     let search_result = search(arg.rest())?;
 
     msg.channel_id
@@ -175,7 +171,9 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
             m.add_embed(|e| {
                 e.color(Colour::GOLD);
                 if search_result.abstract_text != "" {
-                    e.title(search_result.heading);
+                    let mut title = MessageBuilder::new();
+                    title.push_bold(search_result.heading);
+                    e.title(title.build());
                     e.description(search_result.abstract_text);
                     e.url(search_result.abstract_url);
                     if search_result.image != "" {
@@ -183,7 +181,9 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                     }
                 } else {
                     if search_result.related_topics.len() != 0 {
-                        e.title("Search result:");
+                        let mut title = MessageBuilder::new();
+                        title.push_bold("Search results:");
+                        e.title(title.build());
                         let search_result = search_result.related_topics;
                         for (idx, topic) in search_result.iter().enumerate() {
                             if let RelatedTopic::TopicResult(topic_res) = topic {
@@ -201,7 +201,7 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
                 }
                 e.footer(|f| {
                     f.icon_url(DUCKDUCKGO_ICON);
-                    f.text("Result from DuckDuckGo");
+                    f.text("Results from DuckDuckGo");
                     f
                 });
                 e

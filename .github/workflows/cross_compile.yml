@@ -1,0 +1,39 @@
+on: [push, pull_request]
+
+name: Cross-compile
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Compile
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target=${{ matrix.target }}
+
+      - name: Tar up binaries
+        runs: tar -czvf sbot-${{ matrix-target }}.tar.gz target/${{ matrix.target }}/release/sbot
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          path: sbot-${{ matrix-target }}.tar.gz
