@@ -62,12 +62,17 @@ jobs:
 
     steps:
       - name: Download artifacts
+        id: download
         uses: actions/download-artifact@v2
         with:
           name: sbot-${{ matrix.target }}
+          path: ${{ matrix.target }}
 
       - name: Tar up binaries
-        run: tar czvf sbot-${{ matrix.target }}.tar.gz sbot-${{ matrix.target }}
+        run: |
+          cd {{ matrix.target }}
+          tar czvf ../sbot-${{ matrix.target }}.tar.gz sbot-${{ matrix.target }}
+          cd -
 
       - name: Publish binaries to release
         uses: softprops/action-gh-release@v1
