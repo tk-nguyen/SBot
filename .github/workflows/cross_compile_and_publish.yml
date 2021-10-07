@@ -1,0 +1,76 @@
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*.*.*'
+
+name: Cross-compile and deploy
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        target:
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Compile
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target=${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          path: target/${{ matrix.target }}/sbot
+          name: sbot-${{ matrix.target }}
+
+  publish:
+    name: Publish
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    strategy:
+      matrix:
+        target:
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: sbot-${{ matrix.target }}
+
+      - name: Tar up binaries
+        run: tar czvf sbot-${{ matrix.target }}.tar.gz sbot-${{ matrix.target }}
+
+      - name: Publish binaries to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: "sbot*"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
