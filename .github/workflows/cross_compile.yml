@@ -32,8 +32,10 @@ jobs:
           args: --release --target=${{ matrix.target }}
 
       - name: Tar up binaries
-        run: tar -czvf sbot-${{ matrix.target }}.tar.gz target/${{ matrix.target }}/release/sbot
-
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czvf ../../../sbot-${{ matrix.target }}.tar.gz sbot
+          cd -
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
