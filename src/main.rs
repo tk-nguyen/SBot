@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use serenity::async_trait;
+use serenity::builder::CreateEmbed;
 use serenity::client::{
     bridge::gateway::{ShardId, ShardManager},
     Client, Context, EventHandler,
@@ -20,6 +21,13 @@ use serenity::model::{
     channel::Message,
     event::ResumedEvent,
     gateway::Ready,
+    interactions::{
+        application_command::{
+            ApplicationCommand, ApplicationCommandInteractionDataOptionValue,
+            ApplicationCommandOptionType,
+        },
+        Interaction, InteractionResponseType,
+    },
     prelude::{Activity, UserId},
 };
 use serenity::prelude::TypeMapKey;
@@ -35,6 +43,12 @@ impl TypeMapKey for ShardManagerContainer {
     type Value = Arc<Mutex<ShardManager>>;
 }
 
+// Slash command response type
+enum SlashCommandResponse {
+    Basic(String),
+    Rich(CreateEmbed),
+}
+
 // We declare our commands here
 #[group]
 #[commands(ping, s)]
@@ -44,13 +58,82 @@ struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
+    // Basic slash commands support
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if let Interaction::ApplicationCommand(command) = interaction {
+            let content = match command.data.name.as_str() {
+                "ping" => {
+                    let mut mes = MessageBuilder::new();
+                    mes.push_bold("Pong!");
+                    SlashCommandResponse::Basic(mes.build())
+                }
+                "s" => {
+                    let options = command
+                        .data
+                        .options
+                        .get(0)
+                        .unwrap()
+                        .resolved
+                        .as_ref()
+                        .unwrap();
+                    if let ApplicationCommandInteractionDataOptionValue::String(query) = options {
+                        let embed = create_search_embed(query).await.unwrap();
+                        SlashCommandResponse::Rich(embed)
+                    } else {
+                        let mut mes = MessageBuilder::new();
+                        mes.push_bold("Please provide a valid search!");
+                        SlashCommandResponse::Basic(mes.build())
+                    }
+                }
+                _ => SlashCommandResponse::Basic(String::from("Not implemented :(")),
+            };
+            if let Err(why) = command
+                .create_interaction_response(ctx, |res| {
+                    res.kind(InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|mes| match content {
+                            SlashCommandResponse::Basic(c) => mes.content(c),
+                            SlashCommandResponse::Rich(e) => mes.add_embed(e),
+                        })
+                })
+                .await
+            {
+                error!("Cannot respond to slash command: {}", why);
+            }
+        }
+    }
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} successfully connected!", ready.user.name);
         ctx.set_activity(Activity::playing("searching the web! | !help"))
             .await;
+        let commands = ApplicationCommand::set_global_application_commands(ctx, |cmds| {
+            cmds.create_application_command(|command| {
+                command.name("ping").description("The ping command")
+            })
+            .create_application_command(|command| {
+                command
+                    .name("s")
+                    .description("Search DuckDuckGo for result")
+                    .create_option(|opt| {
+                        opt.name("query")
+                            .description("The thing you want to search")
+                            .kind(ApplicationCommandOptionType::String)
+                            .required(true)
+                    })
+            })
+        })
+        .await;
+        let commands_list = commands
+            .unwrap()
+            .iter()
+            .map(|c| c.name.clone())
+            .collect::<Vec<String>>();
+        info!(
+            "The bot has the following global slash commands: {:?}",
+            commands_list
+        );
     }
-    async fn resume(&self, _ctx: Context, _resume: ResumedEvent) {
-        info!("Bot successfully reconnected!");
+    async fn resume(&self, _: Context, _: ResumedEvent) {
+        info!("SBot successfully reconnected!");
     }
 }
 
@@ -93,13 +176,13 @@ const DUCKDUCKGO_ICON: &'static str =
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    color_eyre::install()?;
     dotenv()?;
     tracing_subscriber::fmt::init();
-    color_eyre::install()?;
-    // Setting up basic structures
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
+    let app_id = env::var("APP_ID")?.parse::<u64>()?;
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("!"))
         .before(before)
@@ -107,6 +190,7 @@ async fn main() -> Result<()> {
         .help(&SBOT_HELP);
     let mut client = Client::builder(token)
         .event_handler(Handler)
+        .application_id(app_id)
         .framework(framework)
         .await?;
     {
@@ -166,52 +250,56 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage = "<query>"]
 #[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
-    let search_result = search(arg.rest())?;
-
+    let query = arg.rest();
+    let embed = create_search_embed(query).await?;
     msg.channel_id
         .send_message(ctx, |m| {
-            m.add_embed(|e| {
-                e.color(Colour::GOLD);
-                if search_result.abstract_text != "" {
-                    let mut title = MessageBuilder::new();
-                    title.push_bold(search_result.heading);
-                    e.title(title.build());
-
-                    e.description(search_result.abstract_text);
-                    e.url(search_result.abstract_url);
-                    if search_result.image != "" {
-                        e.image(format!("https://duckduckgo.com/{}", search_result.image));
-                    }
-                } else {
-                    if search_result.related_topics.len() != 0 {
-                        let mut title = MessageBuilder::new();
-                        title.push_bold("Search results:");
-                        e.title(title.build());
-
-                        let search_result = search_result.related_topics;
-                        for (idx, topic) in search_result.iter().enumerate() {
-                            if let RelatedTopic::TopicResult(topic_res) = topic {
-                                let mut res = MessageBuilder::new();
-                                res.push(format!("{}\n", topic_res.first_url))
-                                    .push(format!("{}\n", topic_res.text));
-                                e.field(idx + 1, res.build(), true);
-                            }
-                        }
-                    } else {
-                        let mut res = MessageBuilder::new();
-                        res.push_bold("No result found!");
-                        e.description(res.build());
-                    }
-                }
-                e.footer(|f| {
-                    f.icon_url(DUCKDUCKGO_ICON);
-                    f.text("Results from DuckDuckGo");
-                    f
-                });
-                e
-            });
+            m.set_embed(embed);
             m
         })
         .await?;
     Ok(())
+}
+
+async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
+    let search_result = search(query)?;
+    let mut e = CreateEmbed::default();
+    e.colour(Colour::ORANGE);
+    if search_result.abstract_text != "" {
+        let mut title = MessageBuilder::new();
+        title.push_bold(search_result.heading);
+        e.title(title.build());
+
+        e.description(search_result.abstract_text);
+        e.url(search_result.abstract_url);
+        if search_result.image != "" {
+            e.image(format!("https://duckduckgo.com/{}", search_result.image));
+        }
+    } else {
+        if search_result.related_topics.len() != 0 {
+            let mut title = MessageBuilder::new();
+            title.push_bold("Search results:");
+            e.title(title.build());
+
+            let search_result = search_result.related_topics;
+            for (idx, topic) in search_result.iter().enumerate() {
+                if let RelatedTopic::TopicResult(topic_res) = topic {
+                    let mut res = MessageBuilder::new();
+                    res.push(format!("{}\n", topic_res.first_url))
+                        .push(format!("{}\n", topic_res.text));
+                    e.field(idx + 1, res.build(), true);
+                }
+            }
+        } else {
+            let mut res = MessageBuilder::new();
+            res.push_bold("No result found!");
+            e.description(res.build());
+        }
+    }
+    e.footer(|f| {
+        f.icon_url(DUCKDUCKGO_ICON);
+        f.text("Results from DuckDuckGo");
+        f
+    });
+    Ok(e)
 }
