@@ -5,7 +5,9 @@ authors = ["Nguyen Thai <shiroemon279@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-serenity = { version = "0.10", features = ["unstable_discord_api"] }
+serenity = { version = "0.10", features = ["unstable_discord_api", "voice"] }
+songbird = { version =  "0.2", features = ["builtin-queue"] }
+url = "2.2.2"
 chrono = "0.4"
 tracing = "0.1"
 tracing-subscriber = "0.2"

@@ -5,6 +5,7 @@ use ddg::RelatedTopic;
 use dotenv::dotenv;
 use tokio::sync::Mutex;
 use tracing::{error, info};
+use url::Url;
 
 use serenity::async_trait;
 use serenity::builder::CreateEmbed;
@@ -33,6 +34,9 @@ use serenity::model::{
 use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
 
+use songbird::input::{Input, Restartable};
+use songbird::{driver::Bitrate, SerenityInit};
+
 pub mod search;
 use search::search;
 
@@ -53,6 +57,10 @@ enum SlashCommandResponse {
 #[group]
 #[commands(ping, s)]
 struct General;
+
+#[group]
+#[commands(play, leave)]
+struct Music;
 
 struct Handler;
 
@@ -187,10 +195,12 @@ async fn main() -> Result<()> {
         .configure(|c| c.prefix(";"))
         .before(before)
         .group(&GENERAL_GROUP)
+        .group(&MUSIC_GROUP)
         .help(&SBOT_HELP);
     let mut client = Client::builder(token)
         .event_handler(Handler)
         .application_id(app_id)
+        .register_songbird()
         .framework(framework)
         .await?;
     {
@@ -305,4 +315,96 @@ async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
         f
     });
     Ok(e)
+}
+
+/// Play the song from the youtube URL
+#[command]
+#[only_in(guilds)]
+async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    // First, get the requested URL
+    // Then parse it, only allow https
+    let url = Url::parse(args.rest())?;
+    if url.scheme() != "https" {
+        msg.channel_id
+            .say(ctx, "Must provide a valid youtube URL!")
+            .await?;
+        return Ok(());
+    }
+
+    // Join the voice channel of the requested user
+    let guild = msg.guild(ctx).await.unwrap();
+    let guild_id = msg.guild_id.unwrap();
+    let channel_id = guild
+        .voice_states
+        .get(&msg.author.id)
+        .and_then(|v| v.channel_id);
+
+    let bot_connect = match channel_id {
+        Some(channel) => channel,
+        None => {
+            msg.channel_id
+                .say(ctx, "You're not currently in a voice channel.")
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let manager = songbird::get(ctx).await.unwrap();
+    let _ = manager.join(guild_id, bot_connect).await;
+
+    // Finally, play the song
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+        let source = match Restartable::ytdl(url.to_string(), true).await {
+            Ok(source) => source,
+            Err(why) => {
+                error!("Error starting source: {}", why);
+                msg.channel_id
+                    .say(ctx, "The bot can't play from the specified URL!")
+                    .await?;
+                return Ok(());
+            }
+        };
+        handler.set_bitrate(Bitrate::Max);
+        handler.enqueue_source(source.into());
+        let queue = handler.queue().current_queue();
+        let mut message = MessageBuilder::new();
+        message
+            .push("Added: ")
+            .push_bold(queue.last().unwrap().metadata().title.as_ref().unwrap())
+            .push(" to the queue - Requested by ")
+            .push_bold(msg.author_nick(ctx).await.unwrap());
+        msg.channel_id.say(ctx, message.build()).await?;
+    } else {
+        msg.channel_id.say(ctx, "Not in a voice channel.").await?;
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let manager = songbird::get(ctx).await.unwrap();
+
+    match manager.get(guild_id) {
+        Some(_) => match manager.remove(guild_id).await {
+            Ok(_) => {
+                msg.channel_id.say(ctx, "Left the voice channel.").await?;
+            }
+            Err(e) => {
+                error!("There's an error leaving the voice channel: {}", e);
+                msg.channel_id
+                    .say(ctx, "Cannot leave the voice channel.")
+                    .await?;
+            }
+        },
+        None => {
+            msg.channel_id
+                .say(ctx, "You're not currently in a voice channel!")
+                .await?;
+        }
+    }
+    Ok(())
 }
