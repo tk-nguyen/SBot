@@ -103,7 +103,7 @@ impl EventHandler for Handler {
     }
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} successfully connected!", ready.user.name);
-        ctx.set_activity(Activity::playing("searching the web! | !help"))
+        ctx.set_activity(Activity::playing("searching the web! | ;help"))
             .await;
         let commands = ApplicationCommand::set_global_application_commands(ctx, |cmds| {
             cmds.create_application_command(|command| {
@@ -184,7 +184,7 @@ async fn main() -> Result<()> {
     let token = env::var("DISCORD_TOKEN")?;
     let app_id = env::var("APP_ID")?.parse::<u64>()?;
     let framework = StandardFramework::new()
-        .configure(|c| c.prefix("!"))
+        .configure(|c| c.prefix(";"))
         .before(before)
         .group(&GENERAL_GROUP)
         .help(&SBOT_HELP);
@@ -237,10 +237,13 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 
     // We only return the latency when it exists
     let mut message = MessageBuilder::new();
-    message.push_bold("Pong! ");
-    if let Some(latency) = runner.latency {
-        message.push(format!("({}ms)", latency.as_millis()));
-    }
+    match runner.latency {
+        Some(latency) => message
+            .push_bold("Pong!")
+            .push(format!(" ({}ms)", latency.as_millis())),
+
+        None => message.push_bold("Pong!"),
+    };
     msg.channel_id.say(ctx, message.build()).await?;
     Ok(())
 }
