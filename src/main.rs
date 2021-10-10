@@ -7,7 +7,6 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 use url::Url;
 
-use serenity::async_trait;
 use serenity::builder::CreateEmbed;
 use serenity::client::{
     bridge::gateway::{ShardId, ShardManager},
@@ -29,13 +28,18 @@ use serenity::model::{
         },
         Interaction, InteractionResponseType,
     },
-    prelude::{Activity, UserId},
+    prelude::{Activity, ChannelId, UserId},
 };
 use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
+use serenity::{async_trait, http::Http};
 
-use songbird::input::{Input, Restartable};
-use songbird::{driver::Bitrate, SerenityInit};
+use songbird::input::Restartable;
+use songbird::tracks::PlayMode;
+use songbird::{
+    driver::Bitrate, Event, EventContext, EventHandler as VoiceEventHandler, SerenityInit,
+    TrackEvent,
+};
 
 pub mod search;
 use search::search;
@@ -142,6 +146,35 @@ impl EventHandler for Handler {
     }
     async fn resume(&self, _: Context, _: ResumedEvent) {
         info!("SBot successfully reconnected!");
+    }
+}
+
+struct MusicPlaybackNotifier {
+    channel_id: ChannelId,
+    http: Arc<Http>,
+}
+
+// Handle audio playback events
+#[async_trait]
+impl VoiceEventHandler for MusicPlaybackNotifier {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
+        match ctx {
+            EventContext::Track(t) => {
+                let details = t.get(0).unwrap();
+                if let PlayMode::Play = details.0.playing {
+                    let mut message = MessageBuilder::new();
+                    message
+                        .push("Now playing: ")
+                        .push_bold(details.1.metadata().title.as_ref().unwrap());
+                    self.channel_id
+                        .say(&self.http, message.build())
+                        .await
+                        .unwrap();
+                }
+            }
+            _ => (),
+        }
+        None
     }
 }
 
@@ -368,6 +401,17 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         handler.set_bitrate(Bitrate::Max);
         handler.enqueue_source(source.into());
         let queue = handler.queue().current_queue();
+        queue.last().and_then(|t| {
+            t.add_event(
+                Event::Track(TrackEvent::Play),
+                MusicPlaybackNotifier {
+                    channel_id: msg.channel_id,
+                    http: ctx.http.clone(),
+                },
+            )
+            .ok()
+        });
+        // Send the song play event to the handler
         let mut message = MessageBuilder::new();
         message
             .push("Added: ")
