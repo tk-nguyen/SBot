@@ -58,12 +58,14 @@ enum SlashCommandResponse {
 }
 
 // We declare our commands here
+// Search function
 #[group]
 #[commands(ping, s)]
 struct General;
 
+// For playing music
 #[group]
-#[commands(play, leave)]
+#[commands(play, leave, queue, skip)]
 struct Music;
 
 struct Handler;
@@ -465,6 +467,86 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
                 .say(ctx, "You're not currently in a voice channel!")
                 .await?;
         }
+    }
+    Ok(())
+}
+
+/// List the song queue
+#[command]
+#[only_in(guilds)]
+async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let manager = songbird::get(ctx).await.unwrap();
+    let handler = manager.get(guild_id).unwrap();
+    let handler_lock = handler.lock().await;
+
+    let queue = handler_lock.queue().current_queue();
+    let mut song_list = String::from("Current song queue:\n");
+
+    for (idx, track) in queue.iter().enumerate() {
+        if idx == 0 {
+            song_list.push_str(&format!(
+                "{id}. {tr} <----- NOW PLAYING\n",
+                id = idx + 1,
+                tr = track.metadata().title.as_ref().unwrap()
+            ))
+        } else {
+            song_list.push_str(&format!(
+                "{id}. {tr}\n",
+                id = idx + 1,
+                tr = track.metadata().title.as_ref().unwrap()
+            ))
+        }
+    }
+    let mut message = MessageBuilder::new();
+    message.push_codeblock(song_list, None);
+    msg.channel_id.say(ctx, message.build()).await?;
+    Ok(())
+}
+
+/// Skip to the next song on the queue
+#[command]
+#[only_in(guilds)]
+async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild = msg.guild(ctx).await.unwrap();
+    let guild_id = msg.guild_id.unwrap();
+    let manager = songbird::get(ctx).await.unwrap();
+    let handler = manager.get(guild_id).unwrap();
+    let handler_lock = handler.lock().await;
+
+    let bot_user_id = ctx.cache.current_user_id().await;
+
+    let user_channel_id = match guild.voice_states.get(&msg.author.id) {
+        Some(v) => v.channel_id.unwrap(),
+        None => {
+            msg.channel_id
+                .say(ctx, "You're not currently in a voice channel.")
+                .await?;
+            return Ok(());
+        }
+    };
+    let bot_channel_id = match guild.voice_states.get(&bot_user_id) {
+        Some(v) => v.channel_id.unwrap(),
+        None => {
+            msg.channel_id
+                .say(ctx, "The bot is not currently in a voice channel.")
+                .await?;
+            return Ok(());
+        }
+    };
+
+    if user_channel_id == bot_channel_id {
+        if let Ok(_) = handler_lock.queue().skip() {
+            if handler_lock.queue().len() != 0 {
+                msg.channel_id
+                    .say(ctx, "Skipped the currently playing song!")
+                    .await?;
+            }
+        }
+    } else {
+        msg.channel_id
+            .say(ctx, "You're not in the same voice channel with the bot!")
+            .await?;
     }
     Ok(())
 }
