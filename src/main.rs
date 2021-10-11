@@ -204,6 +204,7 @@ async fn main() -> Result<()> {
 
 /// Ping command, also return latency
 #[command]
+#[only_in(guilds)]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     // We return the latency when using this command
     let data = ctx.data.read().await;
@@ -250,6 +251,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 
 /// Query DuckDuckGo for search results
 #[command]
+#[only_in(guilds)]
 #[usage = "<query>"]
 #[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
