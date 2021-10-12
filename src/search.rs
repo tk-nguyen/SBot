@@ -16,7 +16,7 @@ pub struct Video {
     pub video_id: Option<String>,
 }
 
-pub fn search(term: &str) -> Result<Response> {
+pub fn ddg_search(term: &str) -> Result<Response> {
     let query = Query::new(term, BOT_NAME).skip_disambig();
     let res = query.execute()?;
     Ok(res)

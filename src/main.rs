@@ -42,7 +42,7 @@ use songbird::{
 };
 
 pub mod search;
-use search::{search, youtube_search};
+use search::{ddg_search, youtube_search};
 
 // Shard management for latency measuring
 struct ShardManagerContainer;
@@ -65,7 +65,7 @@ struct General;
 
 // For playing music
 #[group]
-#[commands(play, leave, queue, skip)]
+#[commands(play, leave, queue, skip, stop)]
 struct Music;
 
 struct Handler;
@@ -312,7 +312,7 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
 }
 
 async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
-    let search_result = search(query)?;
+    let search_result = ddg_search(query)?;
     let mut e = CreateEmbed::default();
     e.colour(Colour::ORANGE);
     if search_result.abstract_text != "" {
@@ -446,7 +446,6 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 None
             }
         });
-
         // Send the song play event to the handler
     } else {
         msg.channel_id.say(ctx, "Not in a voice channel.").await?;
@@ -564,5 +563,19 @@ async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
             .say(ctx, "You're not in the same voice channel with the bot!")
             .await?;
     }
+    Ok(())
+}
+
+/// Stop the bot from playing, and clear the queue
+#[command]
+#[only_in(guilds)]
+async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let manager = songbird::get(ctx).await.unwrap();
+    let handler = manager.get(guild_id).unwrap();
+    let mut handler_lock = handler.lock().await;
+    handler_lock.stop();
+    msg.channel_id.say(ctx, "Stopped playing music.").await?;
+
     Ok(())
 }
