@@ -42,7 +42,7 @@ use songbird::{
 };
 
 pub mod search;
-use search::search;
+use search::{search, youtube_search};
 
 // Shard management for latency measuring
 struct ShardManagerContainer;
@@ -360,7 +360,18 @@ async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
 async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     // First, get the requested URL
     // Then parse it, only allow https
-    let url = Url::parse(args.rest())?;
+    let url = match Url::parse(args.rest()) {
+        Ok(url) => url,
+        Err(_) => {
+            let video = youtube_search(args.rest()).await?;
+            if let Some(id) = video.video_id {
+                Url::parse(&format!("https://www.youtube.com/watch?v={}", id))?
+            } else {
+                msg.channel_id.say(ctx, "Song not found!").await?;
+                return Ok(());
+            }
+        }
+    };
     if url.scheme() != "https" {
         msg.channel_id
             .say(ctx, "Must provide a valid youtube URL!")
@@ -444,6 +455,7 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
+/// Stop the song queue and leave the voice channel
 #[command]
 #[only_in(guilds)]
 async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
@@ -451,17 +463,21 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
     let manager = songbird::get(ctx).await.unwrap();
 
     match manager.get(guild_id) {
-        Some(_) => match manager.remove(guild_id).await {
-            Ok(_) => {
-                msg.channel_id.say(ctx, "Left the voice channel.").await?;
+        Some(handler) => {
+            handler.lock().await.stop();
+            match manager.remove(guild_id).await {
+                Ok(_) => {
+                    msg.channel_id.say(ctx, "Left the voice channel.").await?;
+                }
+                Err(e) => {
+                    error!("There's an error leaving the voice channel: {}", e);
+                    msg.channel_id
+                        .say(ctx, "Cannot leave the voice channel.")
+                        .await?;
+                }
             }
-            Err(e) => {
-                error!("There's an error leaving the voice channel: {}", e);
-                msg.channel_id
-                    .say(ctx, "Cannot leave the voice channel.")
-                    .await?;
-            }
-        },
+        }
+
         None => {
             msg.channel_id
                 .say(ctx, "You're not currently in a voice channel!")
