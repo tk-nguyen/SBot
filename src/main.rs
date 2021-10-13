@@ -5,7 +5,6 @@ use ddg::RelatedTopic;
 use dotenv::dotenv;
 use tokio::sync::Mutex;
 use tracing::{error, info};
-use url::Url;
 
 use serenity::builder::CreateEmbed;
 use serenity::client::{
@@ -41,8 +40,8 @@ use songbird::{
     TrackEvent,
 };
 
-pub mod search;
-use search::{ddg_search, youtube_search};
+mod search;
+use search::ddg_search;
 
 // Shard management for latency measuring
 struct ShardManagerContainer;
@@ -300,7 +299,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage = "<query>"]
 #[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
-    let query = arg.rest();
+    let query = arg.message();
     let embed = create_search_embed(query).await?;
     msg.channel_id
         .send_message(ctx, |m| {
@@ -358,27 +357,7 @@ async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
 #[command]
 #[only_in(guilds)]
 async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    // First, get the requested URL
-    // Then parse it, only allow https
-    let url = match Url::parse(args.rest()) {
-        Ok(url) => url,
-        Err(_) => {
-            let video = youtube_search(args.rest()).await?;
-            if let Some(id) = video.video_id {
-                Url::parse(&format!("https://www.youtube.com/watch?v={}", id))?
-            } else {
-                msg.channel_id.say(ctx, "Song not found!").await?;
-                return Ok(());
-            }
-        }
-    };
-    if url.scheme() != "https" {
-        msg.channel_id
-            .say(ctx, "Must provide a valid youtube URL!")
-            .await?;
-        return Ok(());
-    }
-
+    let requested_song = args.message();
     // Join the voice channel of the requested user
     let guild = msg.guild(ctx).await.unwrap();
     let guild_id = msg.guild_id.unwrap();
@@ -403,8 +382,11 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     // Finally, play the song
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-        let source = match Restartable::ytdl(url.to_string(), true).await {
-            Ok(source) => source,
+        let source = match Restartable::ytdl_search(requested_song, true).await {
+            Ok(source) => {
+                info!("{:?}", source);
+                source
+            }
             Err(why) => {
                 error!("Error starting source: {}", why);
                 msg.channel_id
@@ -446,7 +428,6 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 None
             }
         });
-        // Send the song play event to the handler
     } else {
         msg.channel_id.say(ctx, "Not in a voice channel.").await?;
     }
@@ -573,8 +554,8 @@ async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
     let manager = songbird::get(ctx).await.unwrap();
     let handler = manager.get(guild_id).unwrap();
-    let mut handler_lock = handler.lock().await;
-    handler_lock.stop();
+    let handler_lock = handler.lock().await;
+    handler_lock.queue().stop();
     msg.channel_id.say(ctx, "Stopped playing music.").await?;
 
     Ok(())
