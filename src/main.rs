@@ -1,5 +1,6 @@
 use std::{collections::HashSet, env, sync::Arc};
 
+use chrono::Duration;
 use color_eyre::eyre::Result;
 use ddg::RelatedTopic;
 use dotenv::dotenv;
@@ -383,10 +384,7 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         let source = match Restartable::ytdl_search(requested_song, true).await {
-            Ok(source) => {
-                info!("{:?}", source);
-                source
-            }
+            Ok(source) => source,
             Err(why) => {
                 error!("Error starting source: {}", why);
                 msg.channel_id
@@ -405,7 +403,17 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             .push_bold(
                 queue
                     .last()
-                    .and_then(|t| t.metadata().title.as_ref())
+                    .and_then(|t| {
+                        let metadata = t.metadata();
+                        // Convert from `std::time::Duration` to `chrono::Duration` for precise time
+                        let length = Duration::from_std(metadata.duration.unwrap()).unwrap();
+                        Some(format!(
+                            "{title} ({min}:{sec})",
+                            title = metadata.title.as_ref().unwrap(),
+                            min = length.num_minutes(),
+                            sec = length.num_seconds() - length.num_minutes() * 60
+                        ))
+                    })
                     .unwrap(),
             )
             .push(" to the queue - Requested by ")
@@ -480,17 +488,24 @@ async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
     let mut song_list = String::from("Current song queue:\n");
 
     for (idx, track) in queue.iter().enumerate() {
+        let metadata = track.metadata();
+        // Convert from `std::time::Duration` to `chrono::Duration` for precise time
+        let length = Duration::from_std(metadata.duration.unwrap())?;
         if idx == 0 {
             song_list.push_str(&format!(
-                "{id}. {tr} <----- NOW PLAYING\n",
+                "{id}. {tr} ({min}:{sec}) <----- NOW PLAYING\n",
                 id = idx + 1,
-                tr = track.metadata().title.as_ref().unwrap()
+                tr = metadata.title.as_ref().unwrap(),
+                min = length.num_minutes(),
+                sec = length.num_seconds() - length.num_minutes() * 60
             ))
         } else {
             song_list.push_str(&format!(
-                "{id}. {tr}\n",
+                "{id}. {tr} ({min}:{sec})\n",
                 id = idx + 1,
-                tr = track.metadata().title.as_ref().unwrap()
+                tr = metadata.title.as_ref().unwrap(),
+                min = length.num_minutes(),
+                sec = length.num_seconds() - length.num_minutes() * 60
             ))
         }
     }
