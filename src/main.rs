@@ -177,8 +177,12 @@ const DUCKDUCKGO_ICON: &'static str =
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    dotenv()?;
+    dotenv().ok();
     tracing_subscriber::fmt::init();
+
+    if let Err(_) = env::var("RUST_LOG") {
+        env::set_var("RUST_LOG", "info");
+    }
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
