@@ -1,8 +1,9 @@
 use std::{collections::HashSet, env, sync::Arc};
 
 use color_eyre::eyre::Result;
-use ddg::RelatedTopic;
+use ddg::{RelatedTopic, Response};
 use dotenv::dotenv;
+use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
@@ -77,7 +78,7 @@ impl EventHandler for Handler {
                         .as_ref()
                         .unwrap();
                     if let ApplicationCommandInteractionDataOptionValue::String(query) = options {
-                        let embed = create_search_embed(query).await.unwrap();
+                        let embed = create_search_embed(query.to_string()).await.unwrap();
                         SlashCommandResponse::Rich(embed)
                     } else {
                         let mut mes = MessageBuilder::new();
@@ -178,11 +179,10 @@ const DUCKDUCKGO_ICON: &'static str =
 async fn main() -> Result<()> {
     color_eyre::install()?;
     dotenv().ok();
-    tracing_subscriber::fmt::init();
-
     if let Err(_) = env::var("RUST_LOG") {
         env::set_var("RUST_LOG", "info");
     }
+    tracing_subscriber::fmt::init();
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
@@ -260,7 +260,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 #[example = "discord"]
 async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
     let query = arg.rest();
-    let embed = create_search_embed(query).await?;
+    let embed = create_search_embed(query.to_string()).await?;
     msg.channel_id
         .send_message(ctx, |m| {
             m.set_embed(embed);
@@ -270,8 +270,14 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
     Ok(())
 }
 
-async fn create_search_embed(query: &str) -> Result<CreateEmbed> {
-    let search_result = search(query)?;
+async fn create_search_embed(query: String) -> Result<CreateEmbed> {
+    let (tx, mut rx) = oneshot::channel::<Response>();
+    tokio::spawn(async move {
+        let query = search(&query).await.unwrap();
+        tx.send(query).unwrap();
+    })
+    .await?;
+    let search_result = rx.try_recv()?;
     let mut e = CreateEmbed::default();
     e.colour(Colour::ORANGE);
     if search_result.abstract_text != "" {
