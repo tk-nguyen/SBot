@@ -182,7 +182,7 @@ async fn main() -> Result<()> {
     if let Err(_) = env::var("RUST_LOG") {
         env::set_var("RUST_LOG", "info");
     }
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt().init();
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
