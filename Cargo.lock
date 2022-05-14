@@ -339,6 +339,7 @@ dependencies = [
 [[package]]
 name = "ddg"
 version = "0.5.0"
+source = "git+https://github.com/tk-nguyen/ddg#caf140987a4a34ad4ada0309d5ce9dda2b755014"
 dependencies = [
  "reqwest 0.9.24",
  "serde",
@@ -1586,7 +1587,7 @@ checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
 
 [[package]]
 name = "sbot"
-version = "0.3.1"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "color-eyre",
