@@ -1,5 +1,9 @@
 on:
   push:
+    paths:
+      - "src/**"
+      - "Cargo*"
+      - "Dockerfile"
     branches:
       - master
     tags:
