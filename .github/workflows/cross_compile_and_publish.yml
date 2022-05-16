@@ -48,7 +48,7 @@ jobs:
 
       - name: Compile
         uses: actions-rs/cargo@v1
-        if: steps.cache.outputs.cache-hit != "true"
+        if: steps.cache.outputs.cache-hit != 'true'
         with:
           use-cross: true
           command: build
