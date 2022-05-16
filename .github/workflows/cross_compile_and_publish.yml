@@ -3,7 +3,6 @@ on:
     paths:
       - "src/**"
       - "Cargo*"
-      - "Dockerfile"
     branches:
       - master
     tags:
@@ -28,6 +27,18 @@ jobs:
         with:
           submodules: true
 
+      - name: Setup cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Install rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -37,6 +48,7 @@ jobs:
 
       - name: Compile
         uses: actions-rs/cargo@v1
+        if: steps.cache.outputs.cache-hit != "true"
         with:
           use-cross: true
           command: build
