@@ -79,14 +79,13 @@ async fn sbot_help(
 }
 
 // This icon is used in the embed for attribution
-const DUCKDUCKGO_ICON: &'static str =
-    "https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png";
+const DUCKDUCKGO_ICON: &str = "https://duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png";
 
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
     dotenv().ok();
-    if let Err(_) = env::var("RUST_LOG") {
+    if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
     tracing_subscriber::fmt().init();
@@ -187,18 +186,16 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
     let search_result = rx.try_recv()?;
     let mut e = CreateEmbed::default();
     e.colour(Colour::ORANGE);
-    if search_result.abstract_text != "" {
+    if search_result.abstract_text.is_empty() {
         let mut title = MessageBuilder::new();
         title.push_bold(search_result.heading);
         e.title(title.build());
 
         e.description(search_result.abstract_text);
         e.url(search_result.abstract_url);
-        if search_result.image != "" {
+        if search_result.image.is_empty() {
             e.image(format!("https://duckduckgo.com/{}", search_result.image));
-        }
-    } else {
-        if search_result.related_topics.len() != 0 {
+        } else if search_result.related_topics.len() != 0 {
             let mut title = MessageBuilder::new();
             title.push_bold("Search results:");
             e.title(title.build());

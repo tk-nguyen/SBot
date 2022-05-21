@@ -20,8 +20,8 @@ impl ScrapeResponse {
     }
 }
 
-const BOT_NAME: &'static str = "sbot_discordbot";
-const DUCKDUCKGO_URL: &'static str = "https://duckduckgo.com/html/";
+const BOT_NAME: &str = "sbot_discordbot";
+const DUCKDUCKGO_URL: &str = "https://duckduckgo.com/html/";
 pub async fn search(term: &str) -> Result<Response> {
     let query = Query::new(term, BOT_NAME).skip_disambig();
     let res = query.execute()?;
