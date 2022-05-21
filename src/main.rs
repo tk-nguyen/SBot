@@ -3,6 +3,7 @@ use std::{collections::HashSet, env, sync::Arc};
 use color_eyre::eyre::Result;
 use ddg::{RelatedTopic, Response};
 use dotenv::dotenv;
+use search::*;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tracing::{error, info};
@@ -15,20 +16,13 @@ use serenity::client::{
 };
 use serenity::framework::standard::{
     help_commands,
-    macros::{command, group, help, hook},
+    macros::{command, group, help},
     Args, CommandGroup, CommandResult, HelpOptions, StandardFramework,
 };
 use serenity::model::{
     channel::Message,
     event::ResumedEvent,
     gateway::Ready,
-    interactions::{
-        application_command::{
-            ApplicationCommand, ApplicationCommandInteractionDataOptionValue,
-            ApplicationCommandOptionType,
-        },
-        Interaction, InteractionResponseType,
-    },
     prelude::{Activity, UserId},
 };
 use serenity::prelude::TypeMapKey;
@@ -44,12 +38,6 @@ impl TypeMapKey for ShardManagerContainer {
     type Value = Arc<Mutex<ShardManager>>;
 }
 
-// Slash command response type
-enum SlashCommandResponse {
-    Basic(String),
-    Rich(CreateEmbed),
-}
-
 // We declare our commands here
 #[group]
 #[commands(ping, s)]
@@ -59,95 +47,14 @@ struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    // Basic slash commands support
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            let content = match command.data.name.as_str() {
-                "ping" => {
-                    let mut mes = MessageBuilder::new();
-                    mes.push_bold("Pong!");
-                    SlashCommandResponse::Basic(mes.build())
-                }
-                "s" => {
-                    let options = command
-                        .data
-                        .options
-                        .get(0)
-                        .unwrap()
-                        .resolved
-                        .as_ref()
-                        .unwrap();
-                    if let ApplicationCommandInteractionDataOptionValue::String(query) = options {
-                        let embed = create_search_embed(query.to_string()).await.unwrap();
-                        SlashCommandResponse::Rich(embed)
-                    } else {
-                        let mut mes = MessageBuilder::new();
-                        mes.push_bold("Please provide a valid search!");
-                        SlashCommandResponse::Basic(mes.build())
-                    }
-                }
-                _ => SlashCommandResponse::Basic(String::from("Not implemented :(")),
-            };
-            if let Err(why) = command
-                .create_interaction_response(ctx, |res| {
-                    res.kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|mes| match content {
-                            SlashCommandResponse::Basic(c) => mes.content(c),
-                            SlashCommandResponse::Rich(e) => mes.add_embed(e),
-                        })
-                })
-                .await
-            {
-                error!("Cannot respond to slash command: {}", why);
-            }
-        }
-    }
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("{} successfully connected!", ready.user.name);
         ctx.set_activity(Activity::playing("searching the web! | ;help"))
             .await;
-        let commands = ApplicationCommand::set_global_application_commands(ctx, |cmds| {
-            cmds.create_application_command(|command| {
-                command.name("ping").description("The ping command")
-            })
-            .create_application_command(|command| {
-                command
-                    .name("s")
-                    .description("Search DuckDuckGo for result")
-                    .create_option(|opt| {
-                        opt.name("query")
-                            .description("The thing you want to search")
-                            .kind(ApplicationCommandOptionType::String)
-                            .required(true)
-                    })
-            })
-        })
-        .await;
-        let commands_list = commands
-            .unwrap()
-            .iter()
-            .map(|c| c.name.clone())
-            .collect::<Vec<String>>();
-        info!(
-            "The bot has the following global slash commands: {:?}",
-            commands_list
-        );
     }
     async fn resume(&self, _: Context, _: ResumedEvent) {
         info!("SBot successfully reconnected!");
     }
-}
-
-// Logging requested command
-#[hook]
-#[instrument]
-async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
-    info!(
-        "Got command '{}' by user '{}#{}'",
-        command_name, msg.author.name, msg.author.discriminator
-    );
-
-    true
 }
 
 // A help command for the bot
@@ -189,7 +96,6 @@ async fn main() -> Result<()> {
     let app_id = env::var("APP_ID")?.parse::<u64>()?;
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(";"))
-        .before(before)
         .group(&GENERAL_GROUP)
         .help(&SBOT_HELP);
     let mut client = Client::builder(token)
@@ -272,8 +178,9 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
 
 async fn create_search_embed(query: String) -> Result<CreateEmbed> {
     let (tx, mut rx) = oneshot::channel::<Response>();
+    let first_query = query.clone();
     tokio::spawn(async move {
-        let query = search(&query).await.unwrap();
+        let query = search(&first_query).await.unwrap();
         tx.send(query).unwrap();
     })
     .await?;
@@ -306,9 +213,18 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
                 }
             }
         } else {
-            let mut res = MessageBuilder::new();
-            res.push_bold("No result found!");
-            e.description(res.build());
+            let (scrape_tx, mut scrape_rx) = oneshot::channel::<ScrapeResponse>();
+            tokio::spawn(async move {
+                let query = search_scrape(&query).await.unwrap();
+                scrape_tx.send(query).unwrap();
+            })
+            .await?;
+            let result = scrape_rx.try_recv()?;
+            let mut title = MessageBuilder::new();
+            title.push_bold(result.title);
+            e.title(title.build());
+            e.url(result.url);
+            e.description(result.content);
         }
     }
     e.footer(|f| {
