@@ -186,27 +186,25 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
     let search_result = rx.try_recv()?;
     let mut e = CreateEmbed::default();
     e.colour(Colour::ORANGE);
-    if search_result.abstract_text != "" {
+    if !search_result.abstract_text.is_empty() {
         let mut title = MessageBuilder::new();
         title.push_bold(search_result.heading);
         e.title(title.build());
         e.description(search_result.abstract_text);
         e.url(search_result.abstract_url);
-        if search_result.image != "" {
+        if !search_result.image.is_empty() {
             e.image(format!("https://duckduckgo.com/{}", search_result.image));
-        } else {
-            if search_result.related_topics.len() != 0 {
-                let mut title = MessageBuilder::new();
-                title.push_bold("Search results:");
-                e.title(title.build());
-                let search_result = search_result.related_topics;
-                for (idx, topic) in search_result.iter().enumerate() {
-                    if let RelatedTopic::TopicResult(topic_res) = topic {
-                        let mut res = MessageBuilder::new();
-                        res.push(format!("{}\n", topic_res.first_url))
-                            .push(format!("{}\n", topic_res.text));
-                        e.field(idx + 1, res.build(), true);
-                    }
+        } else if search_result.related_topics.is_empty() {
+            let mut title = MessageBuilder::new();
+            title.push_bold("Search results:");
+            e.title(title.build());
+            let search_result = search_result.related_topics;
+            for (idx, topic) in search_result.iter().enumerate() {
+                if let RelatedTopic::TopicResult(topic_res) = topic {
+                    let mut res = MessageBuilder::new();
+                    res.push(format!("{}\n", topic_res.first_url))
+                        .push(format!("{}\n", topic_res.text));
+                    e.field(idx + 1, res.build(), true);
                 }
             }
         }
@@ -218,7 +216,6 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
         })
         .await?;
         let result = scrape_rx.try_recv()?;
-        println!("{:#?}", result);
         let mut title = MessageBuilder::new();
         title.push_bold(result.title);
         e.title(title.build());
