@@ -1,9 +1,9 @@
 use std::{collections::HashSet, env, sync::Arc};
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use ddg::{RelatedTopic, Response};
 use dotenv::dotenv;
-use search::*;
+use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tracing::{error, info};
@@ -29,7 +29,7 @@ use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
 
 pub mod search;
-use search::search;
+use search::*;
 
 // Shard management for latency measuring
 struct ShardManagerContainer;
@@ -176,25 +176,27 @@ async fn s(ctx: &Context, msg: &Message, arg: Args) -> CommandResult {
 }
 
 async fn create_search_embed(query: String) -> Result<CreateEmbed> {
-    let (tx, mut rx) = oneshot::channel::<Response>();
+    let (tx, rx) = oneshot::channel::<Response>();
     let first_query = query.clone();
-    tokio::spawn(async move {
-        let query = search(&first_query).await.unwrap();
-        tx.send(query).unwrap();
-    })
-    .await?;
-    let search_result = rx.try_recv()?;
+    tokio::spawn(async move { search(&first_query, tx).await });
+    let search_result = rx.await?;
+
     let mut e = CreateEmbed::default();
     e.colour(Colour::ORANGE);
+    // If the abstract has content, build the embed from it
     if !search_result.abstract_text.is_empty() {
         let mut title = MessageBuilder::new();
         title.push_bold(search_result.heading);
         e.title(title.build());
         e.description(search_result.abstract_text);
         e.url(search_result.abstract_url);
+        // If there is an image, use that in the embed
         if !search_result.image.is_empty() {
             e.image(format!("https://duckduckgo.com/{}", search_result.image));
-        } else if search_result.related_topics.is_empty() {
+        }
+        // Else if there are related topics,
+        // build the embed from those topics
+        else if !search_result.related_topics.is_empty() {
             let mut title = MessageBuilder::new();
             title.push_bold("Search results:");
             e.title(title.build());
@@ -208,14 +210,16 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
                 }
             }
         }
-    } else {
-        let (scrape_tx, mut scrape_rx) = oneshot::channel::<ScrapeResponse>();
-        tokio::spawn(async move {
-            let query = search_scrape(&query).await.unwrap();
-            scrape_tx.send(query).unwrap();
-        })
-        .await?;
-        let result = scrape_rx.try_recv()?;
+    }
+    // Last resort, we scrape the DuckDuckGo HTML search
+    // then return the first result we found
+    else {
+        let (scrape_tx, mut scrape_rx) = mpsc::unbounded_channel::<ScrapeResponse>();
+        tokio::spawn(async move { search_scrape(&query, scrape_tx).await });
+        let result = scrape_rx
+            .recv()
+            .await
+            .ok_or(eyre!("Cannot receive scrape result!"))?;
         let mut title = MessageBuilder::new();
         title.push_bold(result.title);
         e.title(title.build());
