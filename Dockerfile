@@ -1,4 +1,4 @@
-FROM rust:1.60 AS build
+FROM rust:1.61 AS build
 COPY . /SBot
 WORKDIR /SBot
 RUN cargo build --release
