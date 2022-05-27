@@ -1,7 +1,7 @@
 use std::{collections::HashSet, env, sync::Arc};
 
 use color_eyre::eyre::{eyre, Result};
-use ddg::{RelatedTopic, Response};
+use ddg::Response;
 use dotenv::dotenv;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -23,7 +23,7 @@ use serenity::model::{
     channel::Message,
     event::ResumedEvent,
     gateway::Ready,
-    prelude::{Activity, UserId},
+    prelude::{Activity, GatewayIntents, UserId},
 };
 use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
@@ -92,14 +92,13 @@ async fn main() -> Result<()> {
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;
-    let app_id = env::var("APP_ID")?.parse::<u64>()?;
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(";"))
         .group(&GENERAL_GROUP)
         .help(&SBOT_HELP);
-    let mut client = Client::builder(token)
+    let intents = GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILD_MESSAGES;
+    let mut client = Client::builder(token, intents)
         .event_handler(Handler)
-        .application_id(app_id)
         .framework(framework)
         .await?;
     {
@@ -193,22 +192,6 @@ async fn create_search_embed(query: String) -> Result<CreateEmbed> {
         // If there is an image, use that in the embed
         if !search_result.image.is_empty() {
             e.image(format!("https://duckduckgo.com/{}", search_result.image));
-        }
-        // Else if there are related topics,
-        // build the embed from those topics
-        else if !search_result.related_topics.is_empty() {
-            let mut title = MessageBuilder::new();
-            title.push_bold("Search results:");
-            e.title(title.build());
-            let search_result = search_result.related_topics;
-            for (idx, topic) in search_result.iter().enumerate() {
-                if let RelatedTopic::TopicResult(topic_res) = topic {
-                    let mut res = MessageBuilder::new();
-                    res.push(format!("{}\n", topic_res.first_url))
-                        .push(format!("{}\n", topic_res.text));
-                    e.field(idx + 1, res.build(), true);
-                }
-            }
         }
     }
     // Last resort, we scrape the DuckDuckGo HTML search
