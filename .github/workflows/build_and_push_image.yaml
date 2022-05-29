@@ -7,7 +7,7 @@ on:
     tags:
       - "v*.*.*"
 
-name: Build and push image to GitHub Container Registry
+name: Build and push image
 
 jobs:
   build-and-push:
