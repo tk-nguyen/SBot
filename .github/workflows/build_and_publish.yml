@@ -83,9 +83,14 @@ jobs:
 
       - name: Tar up binaries
         run: |
-          mv target/${{ matrix.target }}/sbot
-          chmod +x sbot
-          tar czvf sbot-${{ matrix.target }}.tar.gz sbot
+          if [[ ${{ matrix.target }} == "x86_64-pc-windows-gnu" ]]; then
+            mv target/${{ matrix.target }}/release/sbot.exe .
+            chmod +x sbot.exe
+          else
+            mv target/${{ matrix.target }}/release/sbot .
+            chmod +x sbot
+          fi
+          tar czvf sbot-${{ matrix.target }}.tar.gz sbot*
 
       - name: Publish binaries to release
         uses: softprops/action-gh-release@v1
