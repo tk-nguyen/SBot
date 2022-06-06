@@ -1,8 +1,22 @@
-FROM rust:1.61 AS build
+FROM --platform=$BUILDPLATFORM rust:1.61 AS build
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 COPY . /SBot
 WORKDIR /SBot
-RUN cargo build --release
+RUN case $TARGETPLATFORM in \
+    linux/amd64) \
+    rustup target add x86_64-unknown-linux-gnu && \
+    cargo build --target=x86_64-unknown-linux-gnu --release && \
+    cp target/x86_64-unknown-linux-gnu/release/sbot . \
+    ;; \
+    linux/arm64) \
+    apt update && apt install -y crossbuild-essential-arm64 && \
+    rustup target add aarch64-unknown-linux-gnu && \
+    cargo build --target=aarch64-unknown-linux-gnu --release && \
+    cp target/aarch64-unknown-linux-gnu/release/sbot . \
+    ;; \
+    esac
 
-FROM gcr.io/distroless/cc-debian11
-COPY --from=build /SBot/target/release/sbot .
+FROM --platform=$TARGETPLATFORM gcr.io/distroless/cc-debian11
+COPY --from=build /SBot/sbot .
 CMD ["/sbot"]
