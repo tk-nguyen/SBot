@@ -18,5 +18,6 @@ RUN case $TARGETPLATFORM in \
     esac
 
 FROM --platform=$TARGETPLATFORM gcr.io/distroless/cc-debian11
+LABEL org.opencontainers.image.authors="Nguyen Thai <shiroemon279@gmail.com>"
 COPY --from=build /SBot/sbot .
 CMD ["/sbot"]
