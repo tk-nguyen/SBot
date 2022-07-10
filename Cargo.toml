@@ -1,8 +1,8 @@
 [package]
 name = "sbot"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Nguyen Thai <shiroemon279@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 serenity = { version = "0.11" }
