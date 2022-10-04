@@ -1,0 +1,13 @@
+# fly.toml file generated for sbot on 2022-10-04T18:31:10+07:00
+
+app = "sbot"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[env]
+
+[experimental]
+  allowed_public_ports = []
+  auto_rollback = true
+
