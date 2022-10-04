@@ -12,11 +12,9 @@ on:
 name: Build and publish binaries
 
 jobs:
-  build:
-    name: Build
+  build-and-publish:
+    name: Build and publish
     runs-on: ubuntu-latest
-    outputs:
-      cache: ${{ steps.cache.outputs.cache-hit }}
     strategy:
       matrix:
         target:
@@ -45,23 +43,8 @@ jobs:
           command: build
           args: --release --target=${{ matrix.target }}
 
-  publish:
-    name: Publish
-    needs: [build]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-musl
-          - x86_64-unknown-linux-gnu
-          - x86_64-pc-windows-gnu
-
-    steps:
-      - name: Restore cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Tar up binaries
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           if [[ ${{ matrix.target }} == "x86_64-pc-windows-gnu" ]]; then
             mv target/${{ matrix.target }}/release/sbot.exe .
@@ -73,6 +56,7 @@ jobs:
           tar czvf sbot-${{ matrix.target }}.tar.gz sbot*
 
       - name: Publish binaries to release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: "sbot*.tar.gz"
