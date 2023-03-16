@@ -28,7 +28,7 @@ use serenity::model::{
 use serenity::prelude::TypeMapKey;
 use serenity::utils::{Colour, MessageBuilder};
 
-pub mod search;
+pub(crate) mod search;
 use search::*;
 
 // Shard management for latency measuring
