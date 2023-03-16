@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.61 AS build
+FROM --platform=$BUILDPLATFORM rust:bullseye AS build
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 COPY . /SBot
