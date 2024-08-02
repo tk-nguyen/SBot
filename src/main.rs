@@ -2,7 +2,7 @@ use std::{collections::HashSet, env, sync::Arc};
 
 use color_eyre::eyre::{eyre, Result};
 use ddg::Response;
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -84,7 +84,7 @@ const DUCKDUCKGO_ICON: &str = "https://duckduckgo.com/assets/icons/meta/DDG-iOS-
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    dotenv().ok();
+    dotenv()?;
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
