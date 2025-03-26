@@ -86,7 +86,10 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
     dotenv().ok();
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "info");
+        // Rust 2024 make env::set_var unsafe
+        unsafe {
+            env::set_var("RUST_LOG", "info");
+        }
     }
     tracing_subscriber::fmt().init();
 
