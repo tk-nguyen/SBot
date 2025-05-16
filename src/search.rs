@@ -32,7 +32,7 @@ impl Default for ScrapeResponse {
 }
 
 const BOT_NAME: &str = "sbot_discordbot";
-const DUCKDUCKGO_URL: &str = "https://duckduckgo.com/html/";
+const DUCKDUCKGO_URL: &str = "https://html.duckduckgo.com/html/";
 // Normal search, using DuckDuckGo instant search API
 pub async fn search(term: &str, tx: oneshot::Sender<Response>) -> Result<()> {
     let query = Query::new(term, BOT_NAME).skip_disambig();
