@@ -1,11 +1,11 @@
 [package]
 name = "sbot"
-version = "0.1.17"
+version = "0.2.0"
 authors = ["Nguyen Thai <shiroemon279@gmail.com>"]
 edition = "2024"
 
 [dependencies]
-serenity = { version = "0.11" }
+poise = "0.6"
 chrono = "0.4"
 tracing = "0.1"
 tracing-subscriber = "0.3"
@@ -15,7 +15,6 @@ ddg = { git = "https://github.com/tk-nguyen/ddg" }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 scraper = "0.23.1"
-percent-encoding = "2.3"
 
 [profile.release]
 strip = true

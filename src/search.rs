@@ -1,6 +1,6 @@
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::eyre::{Context, Result, eyre};
 use ddg::{Query, Response};
-use reqwest::{Client, Url};
+use reqwest::Client;
 use scraper::{Html, Selector};
 use tokio::sync::{mpsc, oneshot};
 
@@ -31,7 +31,7 @@ impl Default for ScrapeResponse {
     }
 }
 
-const BOT_NAME: &str = "sbot_discordbot";
+const BOT_NAME: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36";
 const DUCKDUCKGO_URL: &str = "https://html.duckduckgo.com/html/";
 // Normal search, using DuckDuckGo instant search API
 pub async fn search(term: &str, tx: oneshot::Sender<Response>) -> Result<()> {
@@ -42,17 +42,17 @@ pub async fn search(term: &str, tx: oneshot::Sender<Response>) -> Result<()> {
 }
 
 // We scrape the duckduckgo html search result if the Instant Answer API return nothing
-pub async fn search_scrape(term: &str, tx: mpsc::UnboundedSender<ScrapeResponse>) -> Result<()> {
+pub async fn search_scrape(term: String, tx: mpsc::UnboundedSender<ScrapeResponse>) -> Result<()> {
     // Initial request to search
     let search = Client::builder()
         .user_agent(BOT_NAME)
         .build()?
         .get(DUCKDUCKGO_URL)
-        .query(&[("q", term)])
+        .query(&[("q", term.as_str())])
         .send()
         .await?;
-    let document = Html::parse_fragment(&search.text().await?);
-
+    let res = search.text().await?;
+    let document = Html::parse_fragment(&res);
     // The search result elements
     let result = document
         .select(&Selector::parse(r#"div[class="links_main links_deep result__body"]"#).unwrap())
@@ -70,21 +70,10 @@ pub async fn search_scrape(term: &str, tx: mpsc::UnboundedSender<ScrapeResponse>
             tx.clone().send(ScrapeResponse::default()).unwrap();
             eyre!("Cannot find the search result link!")
         })?;
-    let href = header.value().attr("href").ok_or_else(|| {
+    let url = header.value().attr("href").ok_or_else(|| {
         tx.clone().send(ScrapeResponse::default()).unwrap();
         eyre!("Cannot find the search result link!")
     })?;
-    let href_absolute = Url::parse(&format!("{}:{}", "https", href))?;
-    let query = href_absolute
-        .query_pairs()
-        .filter(|(n, _)| n == "uddg")
-        .map(|(_, v)| v)
-        .next()
-        .ok_or_else(|| {
-            tx.clone().send(ScrapeResponse::default()).unwrap();
-            eyre!("Cannot find the search result link!")
-        })?;
-    let url = percent_encoding::percent_decode(query.as_bytes()).decode_utf8_lossy();
     let title = header.text().next().ok_or_else(|| {
         tx.clone().send(ScrapeResponse::default()).unwrap();
         eyre!("Cannot find the search result title!")
