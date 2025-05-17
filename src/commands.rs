@@ -38,8 +38,8 @@ pub(crate) async fn help(
 #[poise::command(slash_command, prefix_command)]
 pub(crate) async fn ping(ctx: Context<'_>) -> Result<()> {
     let ping = match ctx.ping().await.as_millis() {
-        0 => format!("Just connected to Discord, no ping yet!"),
-        p @ _ => format!("**{p} ms**",),
+        0 => "Just connected to Discord, no ping yet!".to_string(),
+        p => format!("**{p} ms**",),
     };
     ctx.say(format!("Pong! {}", ping)).await?;
     Ok(())
