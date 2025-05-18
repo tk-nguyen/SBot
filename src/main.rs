@@ -29,7 +29,8 @@ async fn main() -> Result<()> {
             env::set_var("RUST_LOG", "info");
         }
     }
-    tracing_subscriber::fmt().init();
+    // Install global collector configured based on RUST_LOG env var.
+    tracing_subscriber::fmt::init();
 
     // The bot config
     let token = env::var("DISCORD_TOKEN")?;

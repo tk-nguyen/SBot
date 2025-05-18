@@ -51,8 +51,7 @@ pub async fn search_scrape(term: String, tx: mpsc::UnboundedSender<ScrapeRespons
         .query(&[("q", term.as_str())])
         .send()
         .await?;
-    let res = search.text().await?;
-    let document = Html::parse_fragment(&res);
+    let document = Html::parse_fragment(&search.text().await?);
     // The search result elements
     let result = document
         .select(&Selector::parse(r#"div[class="links_main links_deep result__body"]"#).unwrap())
