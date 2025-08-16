@@ -1,6 +1,6 @@
 [package]
 name = "sbot"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Nguyen Thai <shiroemon279@gmail.com>"]
 edition = "2024"
 
